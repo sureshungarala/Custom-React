@@ -1,7 +1,13 @@
 import React from "./React";
 
 function Foo({name}) {
- return <pre>This is Foo Comp and {name}</pre>
+ const [index, setIndex] = React.useState(0);
+ return (
+  <pre>
+   <span>This is Foo Comp and {name} & {index}</span>
+   <button onClick={() => setIndex(index => index+1)}>Increment</button>
+  </pre>
+  );
 }
 
 export default Foo;
