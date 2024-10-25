@@ -1,3 +1,4 @@
+/* eslint-disable react/no-deprecated */
 // import { StrictMode } from 'react'
 // import { createRoot } from 'react-dom/client'
 /** @jsx React.createElement */
@@ -9,6 +10,6 @@ const rootElem = document.getElementById('root');
 React.createRoot(rootElem);
 React.render(
   // <StrictMode>
-    <App />
+    <App idd="main"/>
   // </StrictMode>,
 )
