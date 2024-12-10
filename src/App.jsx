@@ -12,7 +12,7 @@ function App({ idd }) {
       {count + newCount}
       <h1>Vite + React - {count + newCount}</h1>
       {count - newCount}
-      <Foo name={'Shrini'} />
+      <Foo name={'Shrini'} count={count} />
       <Foo name={'Sarava'} />
       <div className='card' data-attr={count + newCount}>
         <button onClick={() => setCount((count) => count + 1)}>

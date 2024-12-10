@@ -1,3 +1,5 @@
+// TODO: Remove this when you need linting
+/* eslint-disable */
 /**
  * 1. Currently, works only for functional components
  * 2. Yet to handle Fragments
@@ -23,14 +25,22 @@ class ReactNode {
   constructor(component = null, props = {}) {
     /** @type {HTMLElement | null} */
     this.element = null;
+    /** @type {ReactNode} */
     this.parent = null;
+    /** @type {Function | String} */
     this.component = component;
+    /** @type {Object} */
     this.props = props;
+    /** @type {Array<ReactNode>} */
     this.children = [];
+    /** @type {Array<any>} */
     this.states = [];
     this.effects = [];
+    /** @type {String} */
+    this.compkey = '';
     this.stateCount = 0;
     this.effectCount = 0;
+    /** @type {Boolean} */
     this.isMounted = false;
   }
 }
@@ -41,9 +51,35 @@ const React = {
   },
 
   createElement: (type, props = {}, ...children) => {
-    // console.log(typeof type === 'function' ? type.name : type);
     // type can be either a string or a refer to functional / class / Fragment component
     // https://react.dev/reference/react/createElement#parameters
+    let compKey = typeof type === 'function' ? type.name : type;
+    // console.log('compKey', compKey);
+    if (isReconciling && typeof type === 'function') {
+      const probCompKey = recParent.compKey
+        ? `${recParent.compKey}_${recParentIndex}_${compKey}`
+        : `${compKey}_${recParentIndex}`;
+      const existingComp = recParent.children.find(
+        (child) => child.compKey === probCompKey && child.component === type
+      );
+      if (existingComp) {
+        console.log('comp found with the key');
+        const comp = new ReactNode(type, props);
+        comp.states = existingComp.states;
+        comp.isMounted = existingComp.isMounted;
+        curComp = comp;
+        currentStateIndex = 0;
+        const funcComp = type(props);
+        Object.assign(comp, {
+          element: funcComp.element,
+          children: funcComp.children,
+        });
+        comp.compkey = probCompKey;
+        return comp;
+      }
+    } else {
+      console.log('no comp found with the key');
+    }
     let comp = new ReactNode(type ?? null, props);
     if (typeof type === 'function') {
       curComp = comp;
@@ -53,6 +89,7 @@ const React = {
         element: funcComp.element,
         children: funcComp.children,
       });
+      comp.compkey = compKey;
       // comp.__reactNode = comp; // attach the component to the element
       comp.isMounted = true;
       return comp;
@@ -66,9 +103,7 @@ const React = {
       Object.keys(props).forEach((key) => {
         if (key.startsWith('on')) {
           element.addEventListener(key.substring(2).toLowerCase(), props[key]);
-        } else if (key === 'className') {
-          element.className = props[key];
-        } else if (key === 'key' || key === 'ref') {
+        } else if (key === 'className' || key === 'key' || key === 'ref') {
           element[key] = props[key];
         } else {
           element.setAttribute(key, props[key]);
@@ -76,8 +111,11 @@ const React = {
       });
     }
 
-    children.forEach((child) => {
+    children.forEach((child, index) => {
       if (child instanceof ReactNode) {
+        child.compkey = child.compkey
+          ? `${compKey}_${index}_${child.compkey}`
+          : `${compKey}_${index}`;
         child.parent = comp;
         comp.children.push(child);
         element.appendChild(child.element);
@@ -85,10 +123,12 @@ const React = {
         const textElem = document.createTextNode(child);
         const textComp = new ReactNode();
         textComp.element = textElem;
+        textComp.compkey = `${compKey}_${index}`;
         comp.children.push(textComp);
         element.appendChild(textElem);
       }
     });
+    comp.compkey = compKey;
     comp.element = element;
     return comp;
   },
@@ -114,15 +154,19 @@ const React = {
       curComp = comp;
       currentStateIndex = 0;
       isReconciling = true;
+      recParent = comp;
       const updatedValue =
         typeof newVal !== 'function' ? newVal : newVal(comp.states[stateIndex]);
-      if (!Object.is(comp.states[stateIndex], updatedValue)) {
+      if (!Object.is(comp.states[stateIndex], updateValue)) {
         comp.states[stateIndex] = updatedValue;
         const newNode = comp.component(comp.props);
         React.reconcile(newNode, comp);
         // comp.element.replaceWith(newNode.element);
         // comp.element = newNode.element;
       }
+      isReconciling = false;
+      recParent = null;
+      curComp = null;
     };
     return [comp.states[stateIndex], updateValue];
   },
@@ -146,6 +190,8 @@ const React = {
    * @param {ReactNode} newNode
    */
   reconcile(newNode, oldNode) {
+    isReconciling = true;
+    recParent = oldNode;
     if (oldNode.element.tagName !== newNode.element.tagName) {
       Object.assign(oldNode, newNode, { parent: oldNode.parent });
     } else {
@@ -155,6 +201,7 @@ const React = {
           oldNode.element = newNode.element;
         }
       } else {
+        /* ----------- Start: Handle Attrbutes ------------- */
         const oldAttribs = oldNode.element.attributes;
         const oldAttribKeys = [...oldNode.element.attributes].map(
           (attrib) => attrib.name
@@ -173,28 +220,49 @@ const React = {
             oldNode.element.removeAttribute(attrib);
           }
         }
+        /* ----------- End: Handle Attrbutes ------------- */
 
+        /* ----------- Start: Handle Children ------------- */
         let newNodeChildren = newNode.children;
         let oldNodeChildren = oldNode.children;
         for (let i = 0; i < newNodeChildren.length; i++) {
+          recParentIndex = i;
           let shouldRerender = false;
-          if (typeof newNodeChildren[i].component === 'function') {
-            const oldNodeProps = oldNodeChildren[i].props || {};
-            const newNodeProps = newNodeChildren[i].props || {};
-            for (let key of Object.keys(newNodeProps)) {
-              if (!Object.is(oldNodeProps[key], newNodeProps[key])) {
-                shouldRerender = true;
-                break;
-              }
-            }
-          } else {
+          const oldChild = oldNodeChildren[i];
+          const newChild = newNodeChildren[i];
+          if (oldChild && newChild.component === oldChild.component) {
+            oldChild.props = newChild.props;
             shouldRerender = true;
+          } else {
+            oldChild.element.replaceChild(
+              newChild.element,
+              oldChild?.element || null
+            );
+            newChild.parent = oldChild;
+            oldChild.children[i] = newChild;
           }
+          // if (typeof newNodeChildren[i].component !== 'function') {
+          //   shouldRerender = true;
+          // } else {
+          //   const oldNodeProps = oldNodeChildren[i].props || {};
+          //   const newNodeProps = newNodeChildren[i].props || {};
+          //   for (let key of Object.keys(newNodeProps)) {
+          //     if (!Object.is(oldNodeProps[key], newNodeProps[key])) {
+          //       oldNodeChildren[i].props = newNodeProps;
+          //       shouldRerender = true;
+          //       break;
+          //     }
+          //   }
+          // }
           if (!shouldRerender) continue;
-          React.reconcile(newNode.children[i], oldNode.children[i]);
+          React.reconcile(newChild, oldChild);
         }
+        /* ----------- End: Handle Children ------------- */
       }
     }
+    isReconciling = false;
+    recParent = null;
+    recParentIndex = -1;
   },
 
   render(comp) {
